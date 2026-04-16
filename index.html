@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Už jsi zaplatil školné?</title>
+    <style>
+        :root {
+            --sat: env(safe-area-inset-top);
+            --sab: env(safe-area-inset-bottom);
+        }
+
+        body, html { 
+            margin: 0; padding: 0; 
+            width: 100%; 
+            height: 100%; 
+            height: 100dvh; /* Dynamická výška pro iOS */
+            background: #050505; color: white; 
+            font-family: 'Arial Black', Gadget, sans-serif;
+            overflow: hidden; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: fixed; /* Zamezí "pružení" stránky na iOS */
+        }
+
+        /* UI Horní lišta */
+        #ui { 
+            width: 100%;
+            background: rgba(0,0,0,0.9); 
+            padding-top: calc(10px + var(--sat)); 
+            padding-bottom: 10px;
+            border-bottom: 3px solid #00ff00; z-index: 10; 
+            display: flex; justify-content: space-around; align-items: center;
+            box-shadow: 0 5px 20px rgba(0,255,0,0.2);
+            flex-shrink: 0;
+        }
+        
+        #score-container { font-size: clamp(1.5em, 5vw, 3em); font-weight: 900; color: #ffff00; text-shadow: 2px 2px #ff0000; }
+        #player-info { font-size: clamp(1em, 3vw, 1.5em); color: #0f0; display: flex; align-items: center; }
+        #player-icon { width: 40px; height: 40px; border-radius: 50%; border: 3px solid #0f0; margin-right: 10px; }
+
+        /* Hlavní wrapper */
+        #main-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            flex-grow: 1;
+            width: 100%;
+            padding-bottom: var(--sab);
+            overflow: hidden;
+            touch-action: none; /* Důležité pro iOS - zakáže systémová gesta */
+        }
+
+        canvas { 
+            display: block; 
+            box-shadow: 0 0 50px rgba(0, 150, 255, 0.4); 
+            border: 4px solid #333;
+            max-width: 95vw;
+            image-rendering: pixelated; /* Ostřejší hrany na Retina displejích */
+            border-radius: 8px;
+            margin-top: auto;
+            margin-bottom: auto;
+        }
+
+        /* Overlay */
+        .overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0, 0, 0, 0.98); backdrop-filter: blur(15px); 
+            -webkit-backdrop-filter: blur(15px); /* Pro Safari */
+            z-index: 100; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; text-align: center; padding: 20px; 
+            box-sizing: border-box;
+        }
+        
+        .btn { 
+            padding: clamp(15px, 4vw, 30px) clamp(30px, 8vw, 80px); 
+            font-size: clamp(1.5em, 6vw, 3em); font-weight: 900; 
+            color: white; background: linear-gradient(45deg, #00aa00, #00ff00); 
+            border: none; border-radius: 80px; 
+            cursor: pointer; box-shadow: 0 0 40px rgba(0, 255, 0, 0.6); 
+            text-transform: uppercase; 
+            -webkit-appearance: none; /* Reset pro iOS tlačítka */
+        }
+
+        #enemy-list { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; justify-content: center; }
+        .enemy-card { display: flex; flex-direction: column; align-items: center; width: clamp(100px, 30vw, 220px); }
+        .enemy-card img { width: 70%; aspect-ratio: 1/1; border: 4px solid #ff0000; border-radius: 50%; object-fit: cover; box-shadow: 0 0 20px rgba(255,0,0,0.5); }
+        .enemy-card span { font-weight: 900; color: #ff4444; font-size: clamp(1em, 4vw, 2.2em); text-shadow: 2px 2px black; }
+
+        h1.main-title { font-size: clamp(2.5em, 10vw, 6em); color: #fff; animation: mainPulse 2s infinite ease-in-out; text-align: center; line-height: 1; margin: 0; }
+        .joke-subtitle { font-size: clamp(1em, 4vw, 2.5em); color: #ff4444; margin: 20px 0; font-weight: bold; text-transform: uppercase; }
+
+        @keyframes mainPulse {
+            0%, 100% { transform: scale(1); text-shadow: 0 0 30px #f00; }
+            50% { transform: scale(1.05); text-shadow: 0 0 50px #ff0; }
+        }
+
+        /* Joystick */
+        #joystick-zone { 
+            width: 100%; 
+            height: clamp(150px, 25vh, 250px); 
+            display: flex; justify-content: center; align-items: center; 
+            flex-shrink: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #joystick-container { width: 150px; height: 150px; background: rgba(255, 255, 255, 0.05); border: 5px solid rgba(0, 255, 0, 0.3); border-radius: 50%; position: relative; touch-action: none; }
+        #joystick-knob { position: absolute; top: 50%; left: 50%; width: 70px; height: 70px; background: radial-gradient(circle, #00ff00, #008800); border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 30px rgba(0, 255, 0, 0.8); pointer-events: none; }
+
+        #gameover-photo { width: clamp(150px, 40vw, 300px); aspect-ratio: 1/1; border: 10px solid #ff0000; border-radius: 50%; margin-bottom: 20px; object-fit: cover; }
+        .big-text { font-size: clamp(1.5em, 6vw, 4em); font-weight: 900; line-height: 1.2; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div id="score-container">BODY: <span id="score">0</span></div>
+        <div id="player-info">
+            <img id="player-icon" src="hrac1.png">
+            <span>TY</span>
+        </div>
+    </div>
+
+    <div id="main-wrapper">
+        <canvas id="gameCanvas"></canvas>
+        <div id="joystick-zone">
+            <div id="joystick-container">
+                <div id="joystick-knob"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="start-menu" class="overlay">
+        <h1 class="main-title">UŽ JSI ZAPLATIL<br>ŠKOLNÉ?</h1>
+        <p class="joke-subtitle">OBTÍŽNOST: BRUTÁLNÍ</p>
+        <button class="btn" onclick="showTutorial()">HRÁT</button>
+    </div>
+
+    <div id="tutorial-menu" class="overlay" style="display: none;">
+        <h2 class="tutorial-title" style="font-size: clamp(1.2em, 5vw, 2.5em);">MUSÍŠ ZAPLATIT ŠKOLNÉ!</h2>
+        <div id="enemy-list"></div>
+        <button class="btn" onclick="startGame()">ROZUMÍM!</button>
+    </div>
+
+    <div id="win-screen" class="overlay" style="display: none; background: rgba(0, 50, 0, 0.98);" onclick="location.reload()">
+        <div class="big-text" style="color: #00ff00;">VYHRÁL JSI!</div>
+        <p>NEMUSÍŠ PLATIT ŠKOLNÉ!</p>
+    </div>
+
+    <div id="gameover" class="overlay" style="display: none;" onclick="location.reload()">
+        <img id="gameover-photo" src="">
+        <div class="big-text">
+            <span id="vrah-jmeno" style="color:#ffff00;">...</span><br>
+            <span id="gender-text">TĚ DOSTAL(A)!</span><br>
+            <span style="color: #ff0000; font-size: 0.5em;">MUSÍŠ ZAPLATIT!</span>
+        </div>
+    </div>
+
+    <script>
+        const hracSrc = 'hrac1.png';
+        const infoUtocniku = {
+            'duch1.jpg': { jmeno: 'BOBKOVÁ', gender: 'F' },
+            'duch2.jpg': { jmeno: 'TERČ', gender: 'M' },
+            'duch3.jpg': { jmeno: 'VRBOVÁ', gender: 'F' },
+            'duch4.jpg': { jmeno: 'TERČOVÁ', gender: 'F' }
+        };
+        const seznamUtocniku = Object.keys(infoUtocniku);
+        
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        let tileSize, score = 0, isGameOver = false, isStarted = false, lastTime = 0, dotsRemaining = 0;
+        const moveInterval = 160;
+
+        const mazeMap = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1],
+            [1,1,1,1,0,1,1,1,2,1,2,1,1,1,0,1,1,1,1],
+            [1,1,1,1,0,1,2,2,2,2,2,2,2,1,0,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+        let maze = JSON.parse(JSON.stringify(mazeMap));
+        maze.forEach(row => row.forEach(cell => { if(cell === 0) dotsRemaining++; }));
+
+        const hracImg = new Image(); hracImg.src = hracSrc;
+        let ghosts = seznamUtocniku.map((src, i) => {
+            let img = new Image(); img.src = src;
+            let startX = (i % 2 === 0) ? 1 : 17;
+            let startY = (i < 2) ? 1 : 9;
+            return { x: startX, y: startY, dir: 'L', img: img, src: src, jmeno: infoUtocniku[src].jmeno, gender: infoUtocniku[src].gender };
+        });
+
+        let player = { x: 9, y: 7, dir: null, nextDir: null };
+
+        function showTutorial() {
+            document.getElementById("start-menu").style.display = "none";
+            const enemyList = document.getElementById("enemy-list");
+            enemyList.innerHTML = ""; 
+            seznamUtocniku.forEach(src => {
+                const card = document.createElement("div");
+                card.className = "enemy-card";
+                card.innerHTML = `<img src="${src}"><span>${infoUtocniku[src].jmeno}</span>`;
+                enemyList.appendChild(card);
+            });
+            document.getElementById("tutorial-menu").style.display = "flex";
+        }
+
+        function startGame() {
+            document.getElementById("tutorial-menu").style.display = "none";
+            isStarted = true;
+            resize();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resize() {
+            const ww = window.innerWidth;
+            const wh = window.innerHeight;
+            const uiHeight = document.getElementById("ui").offsetHeight;
+            const joyZoneHeight = document.getElementById("joystick-zone").offsetHeight;
+            
+            // Výpočet tileSize pro iPhone (bere v úvahu výšku UI i joysticku)
+            const availableHeight = wh - uiHeight - joyZoneHeight - 20;
+            const availableWidth = ww * 0.95;
+            
+            tileSize = Math.floor(Math.min(availableWidth / 19, availableHeight / 11));
+            
+            canvas.width = 19 * tileSize; 
+            canvas.height = 11 * tileSize;
+            draw();
+        }
+
+        window.addEventListener('resize', resize);
+        window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+        resize();
+
+        document.onkeydown = (e) => {
+            if(e.key === "ArrowLeft") player.nextDir = "L";
+            if(e.key === "ArrowRight") player.nextDir = "R";
+            if(e.key === "ArrowUp") player.nextDir = "U";
+            if(e.key === "ArrowDown") player.nextDir = "D";
+            if(e.key.startsWith("Arrow")) e.preventDefault();
+        };
+
+        function gameLoop(timestamp) {
+            if (!isStarted || isGameOver) return;
+            if (timestamp - lastTime >= moveInterval) {
+                update();
+                lastTime = timestamp;
+            }
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            if (player.nextDir) {
+                let tx = player.x, ty = player.y;
+                if(player.nextDir === "L") tx--; if(player.nextDir === "R") tx++; if(player.nextDir === "U") ty--; if(player.nextDir === "D") ty++;
+                if(maze[ty] && maze[ty][tx] !== 1) { player.dir = player.nextDir; player.nextDir = null; }
+            }
+            let nx = player.x, ny = player.y;
+            if(player.dir === "L") nx--; if(player.dir === "R") nx++; if(player.dir === "U") ny--; if(player.dir === "D") ny++;
+            if(maze[ny] && maze[ny][nx] !== 1) { player.x = nx; player.y = ny; }
+            
+            if(maze[player.y] && maze[player.y][player.x] === 0) { 
+                maze[player.y][player.x] = 2; 
+                score += 10; 
+                dotsRemaining--;
+                document.getElementById("score").innerText = score;
+                if(dotsRemaining <= 0) {
+                    isGameOver = true;
+                    document.getElementById("win-screen").style.display = "flex";
+                }
+            }
+
+            ghosts.forEach(g => {
+                if(Math.random() < 0.15) g.dir = ["L","R","U","D"][Math.floor(Math.random()*4)];
+                let gnx = g.x, gny = g.y;
+                if(g.dir === "L") gnx--; else if(g.dir === "R") gnx++; else if(g.dir === "U") gny--; else if(g.dir === "D") gny++;
+                if(maze[gny] && maze[gny][gnx] !== 1) { g.x = gnx; g.y = gny; } 
+                else { g.dir = ["L","R","U","D"][Math.floor(Math.random()*4)]; }
+
+                if(player.x === g.x && player.y === g.y) {
+                    isGameOver = true;
+                    document.getElementById("gameover-photo").src = g.src;
+                    document.getElementById("vrah-jmeno").innerText = g.jmeno;
+                    document.getElementById("gender-text").innerText = (g.gender === 'F') ? "TĚ DOSTALA!" : "TĚ DOSTAL!";
+                    document.getElementById("gameover").style.display = "flex";
+                }
+            });
+        }
+
+        function drawCircularImage(img, x, y, size, borderColor) {
+            ctx.save();
+            ctx.shadowBlur = 10; ctx.shadowColor = borderColor;
+            ctx.beginPath(); ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2); ctx.clip();
+            ctx.drawImage(img, x, y, size, size);
+            ctx.restore();
+            ctx.beginPath(); ctx.arc(x + size/2, y + size/2, size/2 - 2, 0, Math.PI * 2);
+            ctx.strokeStyle = borderColor; ctx.lineWidth = 3; ctx.stroke();
+        }
+
+        function draw() {
+            ctx.fillStyle = "#050505"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            for(let r=0; r<maze.length; r++) {
+                for(let c=0; c<maze[r].length; c++) {
+                    let x = c*tileSize, y = r*tileSize;
+                    if(maze[r][c] === 1) { 
+                        ctx.fillStyle = "#1a1a2e"; ctx.fillRect(x+1, y+1, tileSize-2, tileSize-2); 
+                        ctx.strokeStyle = "#4d4dff"; ctx.lineWidth = 1; ctx.strokeRect(x+2, y+2, tileSize-4, tileSize-4);
+                    }
+                    else if(maze[r][c] === 0) { 
+                        ctx.fillStyle = "#fff"; 
+                        ctx.beginPath(); ctx.arc(x+tileSize/2, y+tileSize/2, tileSize*0.1, 0, 7); ctx.fill(); 
+                    }
+                }
+            }
+            if(hracImg.complete) drawCircularImage(hracImg, player.x*tileSize+2, player.y*tileSize+2, tileSize-4, "#00ff00");
+            ghosts.forEach(g => { if(g.img.complete) drawCircularImage(g.img, g.x*tileSize+2, g.y*tileSize+2, tileSize-4, "#ff0000"); });
+        }
+
+        const joystick = document.getElementById('joystick-container');
+        const knob = document.getElementById('joystick-knob');
+
+        const handleInput = (e) => {
+            if (e.cancelable) e.preventDefault();
+            const input = e.touches ? e.touches[0] : e;
+            const rect = joystick.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            let dx = input.clientX - cx;
+            let dy = input.clientY - cy;
+            const dist = Math.min(rect.width / 2 - 10, Math.sqrt(dx*dx + dy*dy));
+            const angle = Math.atan2(dy, dx);
+            knob.style.transform = `translate(calc(-50% + ${Math.cos(angle)*dist}px), calc(-50% + ${Math.sin(angle)*dist}px))`;
+
+            if (dist > 20) {
+                if (Math.abs(dx) > Math.abs(dy)) player.nextDir = dx > 0 ? "R" : "L";
+                else player.nextDir = dy > 0 ? "D" : "U";
+            }
+        };
+
+        const resetJoystick = () => { knob.style.transform = `translate(-50%, -50%)`; };
+        joystick.addEventListener('touchstart', handleInput, {passive: false});
+        joystick.addEventListener('touchmove', handleInput, {passive: false});
+        joystick.addEventListener('touchend', resetJoystick);
+        joystick.addEventListener('mousedown', (e) => {
+            handleInput(e);
+            const move = (me) => handleInput(me);
+            const up = () => { window.removeEventListener('mousemove', move); resetJoystick(); };
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', up, {once:true});
+        });
+    </script>
+</body>
+</html>
